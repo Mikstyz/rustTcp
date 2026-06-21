@@ -3,61 +3,68 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{debug, info};
 
-use crate::tcp::connection;
+use common::connection;
 
 pub struct TcpServer {
-    name: String,
-    addr: String,
-    password: String,
+    _addr: String,
+    _name: String,
+    _password: String,
 
-    connectoins: Arc<Mutex<connection::ConnectionManager>>,
+    _connectoins: Arc<Mutex<connection::ConnectionManager>>,
+    _timeout_secont: u16,
+    _update_time_second: u8,
 }
 
-// connection lifetime
-const TIMEOUT_SECOND: u64 = 20;
-
-// number of connection updates
-const UPDATE_TIME_SECOND: u64 = 60;
-
 impl TcpServer {
-    pub fn new(name: &str, addr: &str, password: &str) -> Self {
+    pub fn new(
+        addr: &str,
+        name: &str,
+        password: &str,
+        timeout_secont: u16,
+        update_time_second: u8,
+    ) -> Self {
         debug!(
-            "name: {} \nip: {} \npassword: {}\nTimeOutSecond: {} \nUpdateTimeSecond: {} \n",
-            name.to_string(),
+            "ip: {} \nname: {} \npassword: {}\nTimeOutSecond: {} \nUpdateTimeSecond: {} \n",
             addr,
+            name.to_string(),
             password.to_string(),
-            TIMEOUT_SECOND,
-            UPDATE_TIME_SECOND
+            timeout_secont,
+            update_time_second
         );
 
-        let manager = connection::ConnectionManager::new(TIMEOUT_SECOND, UPDATE_TIME_SECOND);
+        let manager = connection::ConnectionManager::new(timeout_secont, update_time_second);
 
         Self {
-            name: name.to_string(),
-            addr: addr.to_string(),
-            password: password.to_string(),
-            connectoins: Arc::new(Mutex::new(manager)),
+            _name: name.to_string(),
+            _addr: addr.to_string(),
+            _password: password.to_string(),
+            _connectoins: Arc::new(Mutex::new(manager)),
+            _timeout_secont: timeout_secont,
+            _update_time_second: update_time_second,
         }
     }
 
     //Слушать клиента или отправлять ему сообщения
     async fn handle_client(
-        mut stream: TcpStream,
-        addr: std::net::SocketAddr,
-        manager: Arc<Mutex<connection::ConnectionManager>>,
+        mut _stream: TcpStream,
+        _addr: std::net::SocketAddr,
+        _manager: Arc<Mutex<connection::ConnectionManager>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
 
-    pub async fn run_async(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn initialization_async(&self) -> Result<(), Box<dyn std::error::Error>> {
         debug!("arc clone connections");
-        let cleanup_manager = Arc::clone(&self.connectoins);
+
+        let update_time = self._update_time_second;
+        let cleanup_manager = Arc::clone(&self._connectoins);
 
         debug!("tokio spawn cleanup task");
         tokio::spawn(async move {
             loop {
-                debug!("thread sleep: {}", UPDATE_TIME_SECOND);
-                tokio::time::sleep(Duration::from_secs(UPDATE_TIME_SECOND)).await;
+                //UPDATE_TIME_SECOND
+                debug!("thread sleep: {}", update_time);
+                tokio::time::sleep(Duration::from_secs(update_time as u64)).await;
 
                 debug!("Clear die conn");
                 let mut mgr = cleanup_manager.lock().unwrap();
@@ -72,8 +79,8 @@ impl TcpServer {
             }
         });
 
-        let listener = TcpListener::bind(&self.addr).unwrap();
-        info!("{} TCP server run - addr: {}", self.name, self.addr);
+        let listener = TcpListener::bind(&self._addr).unwrap();
+        info!("{} TCP server run - addr: {}", self._name, self._addr);
 
         debug!("writing tcp flow");
 
@@ -82,7 +89,7 @@ impl TcpServer {
                 Ok((stream, socket_addr)) => {
                     debug!("new connection from: {}", socket_addr);
 
-                    let mgr_clone = Arc::clone(&self.connectoins);
+                    let mgr_clone = Arc::clone(&self._connectoins);
 
                     //async task on client
                     tokio::spawn(async move {
