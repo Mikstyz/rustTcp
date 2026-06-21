@@ -1,9 +1,8 @@
+use crate::service::connection;
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{debug, info};
-
-use common::connection;
 
 pub struct TcpServer {
     _addr: String,
@@ -44,7 +43,7 @@ impl TcpServer {
         }
     }
 
-    //Слушать клиента или отправлять ему сообщения
+    //liste client and send data
     async fn handle_client(
         mut _stream: TcpStream,
         _addr: std::net::SocketAddr,
@@ -56,7 +55,7 @@ impl TcpServer {
     pub async fn initialization_async(&self) -> Result<(), Box<dyn std::error::Error>> {
         debug!("arc clone connections");
 
-        let update_time = self._update_time_second;
+        let update_time = self._update_time_second.clone();
         let cleanup_manager = Arc::clone(&self._connectoins);
 
         debug!("tokio spawn cleanup task");
