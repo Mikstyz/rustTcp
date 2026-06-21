@@ -1,0 +1,7 @@
+{
+  "NAME": "Server",
+  "ADDR": "127.0.0.0:1234",
+  "PASSWORD": "Password",
+  "TIMEOUT_SECOND": "30",
+  "UPDATE_TIME_SECOND": "0"
+}

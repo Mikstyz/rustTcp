@@ -5,43 +5,38 @@ use tokio::net::TcpStream;
 use tokio::time::{Duration, interval};
 use tracing::{debug, error, info};
 
-const DELAY_PING: u64 = 10;
 const BUFFER: [u8; 1024] = [0; 1024];
 
 pub struct Client {
-    id: u64,
-    server_addr: String,
+    _id: u64,
+    _server_addr: String,
 }
 
 impl Client {
-    pub fn new(id: u64, addr: String) -> Self {
+    pub fn new(_id: u64, addr: &str) -> Self {
         Self {
-            id,
-            server_addr: addr,
+            _id,
+            _server_addr: addr.to_string(),
         }
     }
 
-    pub async fn run_async(&self, timeout: u64) -> Result<(), Box<dyn Error>> {
-        debug!("connection for server: {}", self.server_addr);
-        let mut stream = TcpStream::connect(&self.server_addr).await?;
+    pub async fn initialization_on_server_async(
+        &self,
+        delay_ping: u16,
+    ) -> Result<(), Box<dyn Error>> {
+        debug!("connection for server: {}", self._server_addr);
+        let mut stream = TcpStream::connect(&self._server_addr).await?;
 
         debug!(
             "Ok - connection for server - send user id for server: {}",
-            self.id
+            self._id
         );
-        stream.write_all(&self.id.to_be_bytes()).await?;
+        stream.write_all(&self._id.to_be_bytes()).await?;
 
         let mut buf = BUFFER.clone();
 
-        // count interval on ping
-        let ping_i = if timeout > DELAY_PING {
-            timeout - DELAY_PING
-        } else {
-            1
-        };
-
-        debug!("ping_interval: {}s", ping_i);
-        let mut ping_interval = interval(Duration::from_secs(ping_i));
+        debug!("ping_interval: {}s", delay_ping);
+        let mut ping_interval = interval(Duration::from_secs(delay_ping as u64));
 
         // miss first tick interval() ticket in start
         ping_interval.tick().await;
