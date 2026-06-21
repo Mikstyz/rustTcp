@@ -2,7 +2,8 @@
 use tracing::debug; //error, info};
 
 pub mod service {
-    pub mod server;
+    pub mod event;
+    pub mod tcp_connection;
 }
 
 pub mod config {

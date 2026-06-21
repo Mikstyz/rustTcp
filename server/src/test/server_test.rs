@@ -2,7 +2,7 @@ use crate::service;
 use common::test_constants;
 
 pub struct TestServer {
-    _server: service::server::TcpServer,
+    _server: service::tcp_connection::TcpServer,
 }
 
 impl TestServer {
@@ -12,7 +12,7 @@ impl TestServer {
             test_constants::SERVER_NAME
         );
 
-        let server = service::server::TcpServer::new(
+        let server = service::tcp_connection::TcpServer::new(
             test_constants::SERVER_NAME,
             test_constants::SERVER_ADDR,
             test_constants::SERVER_PASSWORD,

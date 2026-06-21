@@ -17,10 +17,12 @@ const CONFIG_DIR: &str = "ClientConfig";
 
 #[tokio::main]
 async fn main() {
-    //log
+    //loging
     tracing_subscriber::fmt::init();
 
     //config
     let config = config::config::Config::load(CONFIG_DIR.to_string());
     debug!("config: \n{:?}", config);
+
+    //create client
 }
