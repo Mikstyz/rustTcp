@@ -1,5 +1,4 @@
 use std::error::Error;
-// Используем асинхронный TcpStream из tokio
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::{Duration, interval};
