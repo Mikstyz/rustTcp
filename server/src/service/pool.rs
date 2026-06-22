@@ -153,7 +153,7 @@ impl WaitingPool {
 
     pub fn run_loop(
         &mut self,
-        interest_pool: std::sync::Arc<tokio::sync::Mutex<slab::Slab<connection::Connection>>>,
+        interest_pool: std::sync::Arc<std::sync::Mutex<slab::Slab<connection::Connection>>>,
     ) {
         //clone point on other tread
         let is_frozen = Arc::clone(&self._is_frozen);
@@ -180,7 +180,7 @@ impl WaitingPool {
                 }
 
                 //get connect pool client connection
-                let mut pool = interest_pool.lock().await;
+                let mut pool = interest_pool.lock();
 
                 //working task
                 tracing::info!("task running");

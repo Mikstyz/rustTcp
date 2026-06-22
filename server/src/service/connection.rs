@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use tracing::debug;
 
 const STATUS_DIE: u8 = 0;
-const STATUS_SLEEP: u8 = 1;
+//const STATUS_SLEEP: u8 = 1;
 const STATUS_LIFE: u8 = 2;
 
 pub struct Connection {
