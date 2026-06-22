@@ -16,3 +16,4 @@ crossterm = { workspace = true }
 serde_json = { workspace = true }
 slab = { workspace = true }
 bytes = { workspace = true }
+parking_lot = { workspace = true }

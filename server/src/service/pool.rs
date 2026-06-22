@@ -1,5 +1,6 @@
 use crate::entities::enum_task;
 use crate::service::connection::{self, Connection};
+use parking_lot::RwLock;
 use slab::Slab;
 use std::cmp::max;
 use std::net::SocketAddr;
@@ -7,7 +8,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use std::{thread, vec};
+use std::{thread, usize, vec};
 use tokio::sync::{Notify, mpsc};
 use tokio::task_local;
 use tracing::{debug, info};
@@ -20,28 +21,28 @@ use tracing::{debug, info};
 // connection life on interested list: 10 - 300 second
 // ==================================================================================
 
-const WAITING_LOOP_TIMOUT_MILLIS: u64 = 10;
+const WAITING_LOOP_TIMOUT_MILLIS: usize = 10;
 
 // ====================================
 // Events
 // ====================================
 pub struct InterestPool {
     //interest (all open connection)
-    _interest_connection_pool: Arc<Mutex<Slab<connection::Connection>>>,
+    _interest_connection_pool: Arc<RwLock<Slab<connection::Connection>>>,
 
     // waiting (only active and thow waiting answer)
     _waiting_pool: WaitingPool,
 
     //time out setting
-    _timeout_second: u16,
-    _update_time_second: u8,
+    _timeout_second: usize,
+    _update_time_second: usize,
 }
 
 impl InterestPool {
-    pub fn new(timeout_second: u16, update_time_second: u8) -> Self {
+    pub fn new(timeout_second: usize, update_time_second: usize) -> Self {
         Self {
             //pool
-            _interest_connection_pool: Arc::new(Mutex::new(Slab::new())),
+            _interest_connection_pool: Arc::new(RwLock::new(Slab::new())),
             _waiting_pool: WaitingPool::new(),
             //time
             _timeout_second: timeout_second,
@@ -75,7 +76,7 @@ impl InterestPool {
     // ====================================
 
     pub fn add_connection(&mut self, mut conn: connection::Connection) {
-        let mut pool_guard = self._interest_connection_pool.lock().unwrap();
+        let mut pool_guard = self._interest_connection_pool.write();
 
         let entry = pool_guard.vacant_entry();
         let conn_id = entry.key();
@@ -90,7 +91,7 @@ impl InterestPool {
         let conn_id = conn.get_id();
         tracing::info!("Removing connection id: {}", conn_id);
 
-        let mut pool_guard = self._interest_connection_pool.lock().unwrap();
+        let mut pool_guard = self._interest_connection_pool.write();
 
         if pool_guard.contains(conn_id) {
             pool_guard.remove(conn_id);
@@ -99,10 +100,9 @@ impl InterestPool {
         }
     }
 
-    pub fn contains_connection(&self, conn: connection::Connection) -> bool {
-        let pool_guard = self._interest_connection_pool.lock().unwrap();
-
-        pool_guard.contains(conn.get_id())
+    pub fn contains_connection(&self, conn_id: usize) -> bool {
+        let pool_guard = self._interest_connection_pool.read();
+        pool_guard.contains(conn_id)
     }
 
     // ====================================
@@ -113,7 +113,6 @@ impl InterestPool {
 // ====================================
 // WAITING
 // ====================================
-
 const WAITING_TASK_BUFFER: usize = 1024;
 
 pub struct WaitingPool {
@@ -153,7 +152,7 @@ impl WaitingPool {
 
     pub fn run_loop(
         &mut self,
-        interest_pool: std::sync::Arc<std::sync::Mutex<slab::Slab<connection::Connection>>>,
+        interest_pool: std::sync::Arc<std::sync::RwLock<slab::Slab<connection::Connection>>>,
     ) {
         //clone point on other tread
         let is_frozen = Arc::clone(&self._is_frozen);
@@ -180,16 +179,22 @@ impl WaitingPool {
                 }
 
                 //get connect pool client connection
-                let mut pool = interest_pool.lock();
+                let mut pool = interest_pool.read();
 
                 //working task
                 tracing::info!("task running");
                 match task {
                     enum_task::Task::ReadData { conn_id } => {
+                        info!("ReadData: conn_id: {}", conn_id);
                         //
                     }
 
                     enum_task::Task::SendData { conn_id, payload } => {
+                        info!(
+                            "SendData: conn_id: {}, len-payload: {}",
+                            conn_id,
+                            payload.len()
+                        );
                         //
                     }
                 }
