@@ -1,17 +1,13 @@
 use crate::entities::enum_task;
-use crate::service::connection::{self, Connection};
+use crate::service::connection::{self};
+use crate::service::pool;
 use parking_lot::RwLock;
 use slab::Slab;
-use std::cmp::max;
-use std::net::SocketAddr;
-use std::net::{TcpListener, TcpStream};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use std::{thread, usize, vec};
+use std::usize;
 use tokio::sync::{Notify, mpsc};
-use tokio::task_local;
-use tracing::{debug, info};
+use tracing::info;
 
 // ==================================================================================
 // 1. Create interested connectoin list
@@ -20,9 +16,7 @@ use tracing::{debug, info};
 // 4. if waiting connectoin list is empty that freze loop
 // connection life on interested list: 10 - 300 second
 // ==================================================================================
-
-const WAITING_LOOP_TIMOUT_MILLIS: usize = 10;
-
+//
 // ====================================
 // Events
 // ====================================
@@ -51,29 +45,22 @@ impl InterestPool {
     }
 
     //server to clinet
-    pub fn send_data_client(&mut self, conn_id: usize, data: &[u8]) {
+    pub fn send_data_client(&mut self, conn_id: usize, data: Option<&[u8]>) {
+        //
+
         //defrost
         self._waiting_pool.defrost();
     }
 
     //client to server
     pub fn get_data_client(&mut self, conn_id: usize) -> Option<&[u8]> {
+        //
+
         //defrost
         self._waiting_pool.defrost();
 
         None
     }
-
-    pub fn register_action(&mut self) {
-        //
-    }
-
-    // ====================================
-    // NOTE
-    //
-    // подумать чет насчет локов в pool guard тк не дело лочить поток ради этого
-    //
-    // ====================================
 
     pub fn add_connection(&mut self, mut conn: connection::Connection) {
         let mut pool_guard = self._interest_connection_pool.write();
@@ -152,7 +139,7 @@ impl WaitingPool {
 
     pub fn run_loop(
         &mut self,
-        interest_pool: std::sync::Arc<std::sync::RwLock<slab::Slab<connection::Connection>>>,
+        interest_pool: std::sync::Arc<parking_lot::RwLock<slab::Slab<connection::Connection>>>,
     ) {
         //clone point on other tread
         let is_frozen = Arc::clone(&self._is_frozen);
@@ -178,15 +165,18 @@ impl WaitingPool {
                     tracing::debug!("loop defrost");
                 }
 
-                //get connect pool client connection
-                let mut pool = interest_pool.read();
-
                 //working task
                 tracing::info!("task running");
+
                 match task {
                     enum_task::Task::ReadData { conn_id } => {
                         info!("ReadData: conn_id: {}", conn_id);
                         //
+                        let pool_guard = interest_pool.read();
+
+                        if let Some(conn) = pool_guard.get(conn_id) {
+                            //read
+                        }
                     }
 
                     enum_task::Task::SendData { conn_id, payload } => {
@@ -196,6 +186,11 @@ impl WaitingPool {
                             payload.len()
                         );
                         //
+                        let pool_guard = interest_pool.read();
+
+                        if let Some(conn) = pool_guard.get(conn_id) {
+                            //send
+                        }
                     }
                 }
 

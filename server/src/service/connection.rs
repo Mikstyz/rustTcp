@@ -9,16 +9,16 @@ const STATUS_LIFE: u8 = 2;
 
 pub struct Connection {
     //connection id
-    _connectoin_id: usize,
+    _id: usize,
 
     //clinet ip + port
-    _client_endpoint: SocketAddr, //ip + port
+    _endpoint: SocketAddr, //ip + port
 
     //clinet chanel
     _tx: mpsc::Sender<String>, // cline chanel
 
     //clinet life
-    _time_stamp_connection: u64, //clinet connectoin time
+    _time_stamp: u64, //clinet connectoin time
     _status: u8,                 //status (life, sleep, die)
 }
 
@@ -26,10 +26,10 @@ impl Connection {
     //create new connection from server
     pub fn new(client_endpoint: SocketAddr, tx: mpsc::Sender<String>) -> Self {
         Self {
-            _connectoin_id: 0,
-            _client_endpoint: client_endpoint,
+            _id: 0,
+            _endpoint: client_endpoint,
             _tx: tx,
-            _time_stamp_connection: (time::timestamp()),
+            _time_stamp: (time::timestamp()),
             _status: STATUS_LIFE,
         }
     }
@@ -38,7 +38,7 @@ impl Connection {
     pub fn print(&self) {
         println!(
             "Connection -> _connectoin_id: {},  Endpoint: {}, Timestamp: {}, Status: {}",
-            self._connectoin_id, self._client_endpoint, self._time_stamp_connection, self._status
+            self._id, self._endpoint, self._time_stamp, self._status
         );
     }
 
@@ -48,7 +48,7 @@ impl Connection {
 
     //get id connection
     pub fn get_id(&self) -> usize {
-        self._connectoin_id
+        self._id
     }
 
     // get xt connection
@@ -57,15 +57,15 @@ impl Connection {
     }
 
     // get name connection
-    pub fn get_client_endpoint(&self) -> SocketAddr {
-        debug!("{}", self._client_endpoint);
-        self._client_endpoint
+    pub fn get_connection_endpoint(&self) -> SocketAddr {
+        debug!("{}", self._endpoint);
+        self._endpoint
     }
 
     // get creation time connection
     pub fn get_time_stamp(&self) -> &u64 {
-        debug!("{}", &self._time_stamp_connection);
-        &self._time_stamp_connection
+        debug!("{}", &self._time_stamp);
+        &self._time_stamp
     }
 
     //is life connectoin
@@ -81,15 +81,16 @@ impl Connection {
 
     //Update the lifetime if there was interaction from the connection
     pub fn update_time_stamp(&mut self) {
-        self._time_stamp_connection = time::timestamp();
+        self._time_stamp = time::timestamp();
 
         if self._status < STATUS_LIFE {
             self._status = STATUS_LIFE;
         }
     }
 
+    //create id in interest pool
     pub fn update_id(&mut self, id: usize) {
-        self._connectoin_id = id;
+        self._id = id;
     }
 
     //download connectoin status
