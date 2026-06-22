@@ -3,8 +3,12 @@ use tracing::debug; //error, info};
 
 pub mod service {
     pub mod connection;
-    pub mod event;
-    pub mod tcp_connection;
+    pub mod pool;
+    pub mod tcp;
+}
+
+pub mod entities {
+    pub mod enum_task;
 }
 
 pub mod config {

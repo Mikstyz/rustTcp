@@ -14,3 +14,5 @@ serde_with = { workspace = true }
 bincode = { workspace = true }
 crossterm = { workspace = true }
 serde_json = { workspace = true }
+slab = { workspace = true }
+bytes = { workspace = true }

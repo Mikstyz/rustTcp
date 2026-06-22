@@ -657,11 +657,13 @@ name = "server"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "bytes",
  "common",
  "crossterm",
  "serde",
  "serde_json",
  "serde_with",
+ "slab",
  "tokio",
  "tracing",
  "tracing-subscriber",

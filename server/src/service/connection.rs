@@ -1,32 +1,34 @@
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use tracing::debug;
-//use tokio::net::TcpStream;
 use common::time;
+use std::net::SocketAddr;
 use tokio::sync::mpsc;
+use tracing::debug;
 
 const STATUS_DIE: u8 = 0;
-//const STATUS_SLEEP: u8 = 1;
+const STATUS_SLEEP: u8 = 1;
 const STATUS_LIFE: u8 = 2;
 
 pub struct Connection {
-    _user_id: u64,
-    _tx: mpsc::Sender<String>,
-    _client_endpoint: SocketAddr,
+    //connection id
+    _connectoin_id: usize,
 
-    //connection time
-    _time_stamp_connection: u64,
-    _status: u8,
+    //clinet ip + port
+    _client_endpoint: SocketAddr, //ip + port
+
+    //clinet chanel
+    _tx: mpsc::Sender<String>, // cline chanel
+
+    //clinet life
+    _time_stamp_connection: u64, //clinet connectoin time
+    _status: u8,                 //status (life, sleep, die)
 }
 
 impl Connection {
     //create new connection from server
-    pub fn new(user_id: u64, client_endpoint: SocketAddr, tx: mpsc::Sender<String>) -> Self {
+    pub fn new(client_endpoint: SocketAddr, tx: mpsc::Sender<String>) -> Self {
         Self {
-            _user_id: user_id,
+            _connectoin_id: 0,
             _client_endpoint: client_endpoint,
             _tx: tx,
-
             _time_stamp_connection: (time::timestamp()),
             _status: STATUS_LIFE,
         }
@@ -35,8 +37,8 @@ impl Connection {
     //print info for connectoin
     pub fn print(&self) {
         println!(
-            "Connection -> Endpoint: {}, Timestamp: {}, Status: {}",
-            self._client_endpoint, self._time_stamp_connection, self._status
+            "Connection -> _connectoin_id: {},  Endpoint: {}, Timestamp: {}, Status: {}",
+            self._connectoin_id, self._client_endpoint, self._time_stamp_connection, self._status
         );
     }
 
@@ -44,10 +46,9 @@ impl Connection {
     //GET
     //==========================================================
 
-    // get id connection
-    pub fn get_id(&self) -> &u64 {
-        debug!("id: {}", &self._user_id);
-        &self._user_id
+    //get id connection
+    pub fn get_id(&self) -> usize {
+        self._connectoin_id
     }
 
     // get xt connection
@@ -85,6 +86,10 @@ impl Connection {
         if self._status < STATUS_LIFE {
             self._status = STATUS_LIFE;
         }
+    }
+
+    pub fn update_id(&mut self, id: usize) {
+        self._connectoin_id = id;
     }
 
     //download connectoin status
