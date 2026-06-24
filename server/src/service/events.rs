@@ -36,9 +36,11 @@ impl InterestPool {
 
         tracing::info!("start workers: {}", concurrency);
 
+        // Pass tx into run_loop so workers can give it to router.to_backend()
+        let tx = interest_pool._waiting_pool.sender();
         interest_pool
             ._waiting_pool
-            .run_loop(interest_pool_clone, concurrency, router);
+            .run_loop(interest_pool_clone, concurrency, router, tx);
 
         interest_pool
     }
@@ -144,11 +146,17 @@ impl WaitingPool {
         self._tx.clone()
     }
 
+    // Expose tx so InterestPool::new() can pass it into run_loop
+    fn sender(&self) -> mpsc::Sender<enum_task::Task> {
+        self._tx.clone()
+    }
+
     fn run_loop(
         &mut self,
         interest_pool: Arc<RwLock<Slab<connection::Connection>>>,
         concurrency: usize,
-        router: Arc<Router>, // Router passed into each worker
+        router: Arc<Router>,
+        tx: mpsc::Sender<enum_task::Task>, // used by router.to_backend() to send responses back
     ) {
         let is_frozen = Arc::clone(&self._is_frozen);
         let freeze_notify = Arc::clone(&self._freeze_notify);
@@ -168,7 +176,8 @@ impl WaitingPool {
             let freeze_notify = Arc::clone(&freeze_notify);
             let interest_pool = Arc::clone(&interest_pool);
             let rx = Arc::clone(&rx);
-            let router = Arc::clone(&router); // each worker gets its own Arc pointer
+            let router = Arc::clone(&router);
+            let tx = tx.clone(); // each worker gets its own clone of tx
 
             tokio::spawn(async move {
                 tracing::info!("Worker #{} started", worker_id);
@@ -197,7 +206,6 @@ impl WaitingPool {
                                 if let Some(conn) = pool_guard.get(conn_id) {
                                     match conn.read_to_buffer() {
                                         Ok(0) => {
-                                            // Client closed connection gracefully
                                             tracing::info!("Client {} disconnected", conn_id);
                                             None
                                         }
@@ -212,7 +220,7 @@ impl WaitingPool {
                                             Some(bytes)
                                         }
                                         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                                            // No data ready yet — spurious wake, skip
+                                            // Spurious wake — no data ready yet
                                             None
                                         }
                                         Err(e) => {
@@ -221,6 +229,13 @@ impl WaitingPool {
                                                 conn_id,
                                                 e
                                             );
+                                            // Remove dead connection from pool
+                                            drop(pool_guard);
+                                            let mut pool_write = interest_pool.write();
+                                            if pool_write.contains(conn_id) {
+                                                pool_write.remove(conn_id);
+                                                tracing::info!("Removed dead conn_id: {}", conn_id);
+                                            }
                                             None
                                         }
                                     }
@@ -229,15 +244,15 @@ impl WaitingPool {
                                 }
                             }; // pool read lock released here
 
-                            // Forward bytes to a backend via the router
+                            // Forward bytes to backend, pass tx so router can send response back
                             if let Some(bytes) = raw_bytes {
                                 if !bytes.is_empty() {
-                                    Arc::clone(&router).to_backend(conn_id, bytes);
+                                    Arc::clone(&router).to_backend(conn_id, bytes, tx.clone());
                                 }
                             }
                         }
 
-                        // Triggered by the router when it has a response for the client
+                        // Triggered by router.from_backend() when backend sends a response
                         enum_task::Task::SendData { conn_id, payload } => {
                             let pool_guard = interest_pool.read();
                             if let Some(conn) = pool_guard.get(conn_id) {

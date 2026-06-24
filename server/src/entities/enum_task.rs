@@ -1,10 +1,5 @@
 pub enum Task {
-    ReadData {
-        conn_id: usize,
-    },
+    ReadData { conn_id: usize },
 
-    SendData {
-        conn_id: usize,
-        payload: bytes::Bytes,
-    },
+    SendData { conn_id: usize, payload: Vec<u8> },
 }

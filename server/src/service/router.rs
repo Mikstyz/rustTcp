@@ -1,11 +1,14 @@
+use crate::entities::enum_task;
 use parking_lot::RwLock;
 use slab::Slab;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
+use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
+use tokio::sync::mpsc;
 use tracing::info;
 
 const TIMEOUT_SERVER_MS: u64 = 200;
@@ -107,7 +110,7 @@ impl Router {
         }
     }
 
-    // Round-Robin: pick the next online backend address
+    // Round-Robin: pick the next online backend
     fn choose_next(&self) -> Option<Arc<BackendPool>> {
         let pool = self._upstreams.read();
 
@@ -148,9 +151,14 @@ impl Router {
         }
     }
 
-    // Forward raw bytes from a client to a backend using the connection pool.
-    // Retries with failover if the chosen backend is unreachable.
-    pub fn to_backend(self: Arc<Self>, conn_id: usize, raw_bytes: Vec<u8>) -> bool {
+    // Forward raw bytes from a client to a backend.
+    // After successful write, spawns from_backend() to listen for the response.
+    pub fn to_backend(
+        self: Arc<Self>,
+        conn_id: usize,
+        raw_bytes: Vec<u8>,
+        tx: mpsc::Sender<enum_task::Task>, // channel back to InterestPool workers
+    ) -> bool {
         let Some(backend) = self.choose_next() else {
             tracing::error!("Cannot route packet: all backend servers are OFFLINE!");
             return false;
@@ -169,10 +177,8 @@ impl Router {
                     current_backend._addr
                 );
 
-                // Acquire a pooled or new connection
                 let Some(mut conn) = current_backend.acquire().await else {
                     tracing::error!("No connection available for {}", current_backend._addr);
-                    // Try to find another backend
                     match router_clone.choose_next() {
                         Some(next) => {
                             current_backend = next;
@@ -201,13 +207,14 @@ impl Router {
                             conn_id,
                             current_backend._addr
                         );
-                        current_backend.release(conn).await;
+
+                        // Spawn listener to read backend response and forward to client
+                        Router::from_backend(Arc::clone(&current_backend), conn, tx.clone());
+
                         data_sent = true;
                     }
                     Err(e) => {
-                        // Connection is broken — drop it, run express health check
                         tracing::error!("Write failed to {}: {}", current_backend._addr, e);
-
                         tracing::warn!(
                             "Running express health check for {}",
                             current_backend._addr
@@ -223,7 +230,6 @@ impl Router {
                         }
 
                         if !is_alive {
-                            // Mark backend as offline and switch to fallback
                             tracing::error!(
                                 "Backend {} is dead. Marking Offline.",
                                 current_backend._addr
@@ -234,7 +240,6 @@ impl Router {
                                     .iter_mut()
                                     .find(|(_, b)| b._addr == current_backend._addr)
                                 {
-                                    // Rebuild with Offline status since BackendPool fields are not mut
                                     let updated = Arc::new(BackendPool::new(
                                         backend._addr.clone(),
                                         id,
@@ -256,7 +261,6 @@ impl Router {
                                 }
                             }
                         } else {
-                            // Server recovered — short pause, retry same backend
                             tokio::time::sleep(Duration::from_millis(50)).await;
                         }
                     }
@@ -265,6 +269,60 @@ impl Router {
         });
 
         true
+    }
+
+    // Listen for a response from backend on this connection.
+    // Reads [conn_id: 8 bytes][payload: N bytes] and sends Task::SendData into the event channel.
+    pub fn from_backend(
+        backend: Arc<BackendPool>,
+        mut conn: TcpStream,
+        tx: mpsc::Sender<enum_task::Task>,
+    ) {
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 4096];
+
+            loop {
+                match conn.read(&mut buf).await {
+                    Ok(0) => {
+                        tracing::info!("Backend {} closed connection", backend._addr);
+                        break;
+                    }
+                    Ok(n) if n >= 8 => {
+                        let conn_id = usize::from_be_bytes(buf[..8].try_into().unwrap());
+                        let payload = buf[8..n].to_vec();
+
+                        tracing::debug!(
+                            "Response from backend {} | conn_id: {} | bytes: {}",
+                            backend._addr,
+                            conn_id,
+                            payload.len()
+                        );
+
+                        if let Err(e) = tx
+                            .send(enum_task::Task::SendData { conn_id, payload })
+                            .await
+                        {
+                            tracing::error!("Failed to forward backend response to channel: {}", e);
+                            break;
+                        }
+                    }
+                    Ok(n) => {
+                        tracing::warn!(
+                            "Backend {} sent packet too small: {} bytes, expected >= 8",
+                            backend._addr,
+                            n
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!("Read error from backend {}: {}", backend._addr, e);
+                        break;
+                    }
+                }
+            }
+
+            // Return connection to pool after listener exits
+            backend.release(conn).await;
+        });
     }
 
     // Ping the address, then add it to the upstream pool if online
@@ -282,7 +340,6 @@ impl Router {
 
         let backend = Arc::new(BackendPool::new(addr.to_string(), id, status, latency_ms));
 
-        // Warm up pool in background so we don't block here
         let backend_clone = Arc::clone(&backend);
         tokio::spawn(async move {
             backend_clone.warmup(POOL_WARMUP_COUNT).await;

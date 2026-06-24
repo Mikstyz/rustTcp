@@ -2,7 +2,7 @@
 members = [
     "common",
     "server",
-    "client"
+    "sdk"
 ]
 resolver = "3"
 
