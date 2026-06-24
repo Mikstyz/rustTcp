@@ -11,6 +11,8 @@ const STATUS_LIFE: u8 = 2;
 const READ_BUFFER_SIZE: usize = 4096;
 const WRITE_BUFFER_SIZE: usize = 4096;
 
+const CHUNK_SIZE: usize = 1024;
+
 pub struct Connection {
     _id: usize,
     _endpoint: SocketAddr,
@@ -43,6 +45,39 @@ impl Connection {
             "Connection -> _connection_id: {},  Endpoint: {}, Timestamp: {}, Status: {}",
             self._id, self._endpoint, self._time_stamp, self._status
         );
+    }
+
+    //==========================================================
+    // NETWORK OPERATIONS
+    //==========================================================
+
+    pub fn read_to_buffer(&mut self) -> std::io::Result<usize> {
+        let mut chunk = [0u8; CHUNK_SIZE];
+
+        match self.stream.try_read(&mut chunk) {
+            Ok(n) if n > 0 => {
+                self.read_buffer.extend_from_slice(&chunk[..n]);
+                self.update_time_stamp();
+                Ok(n)
+            }
+            Ok(n) => Ok(n), // client close connection
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn write_to_buffer(&mut self) -> std::io::Result<usize> {
+        if self.write_buffer.is_empty() {
+            return Ok(0);
+        }
+
+        match self.stream.try_write(&self.write_buffer) {
+            Ok(n) => {
+                let _ = self.write_buffer.split_to(n);
+                self.update_time_stamp();
+                Ok(n)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     //==========================================================
