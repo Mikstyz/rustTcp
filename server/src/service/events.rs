@@ -1,5 +1,6 @@
 use crate::entities::enum_task;
 use crate::service::connection::{self};
+use crate::service::router::Router;
 use parking_lot::RwLock;
 use slab::Slab;
 use std::sync::Arc;
@@ -7,55 +8,42 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::usize;
 use tokio::sync::{Notify, mpsc};
 
-// ==================================================================================
-// 1. Create interested connectoin list
-// 2. If connection send data that | interested connectoin -> waiting connection |
-// 3. loop waiting connection and performance
-// 4. if waiting connectoin list is empty that freze loop
-// connection life on interested list: 10 - 300 second
-// ==================================================================================
-//
-// ====================================
-// Events
-// ====================================
+const CONNECTION_LIFETIME_SECS: u16 = 10;
+
 pub struct InterestPool {
-    //interest (all open connection)
     _connection_pool: Arc<RwLock<Slab<connection::Connection>>>,
-
-    // waiting (only active and thow waiting answer)
     _waiting_pool: WaitingPool,
-
-    //time out setting
     _timeout_second: usize,
     _update_time_second: usize,
 }
 
 impl InterestPool {
-    pub fn new(timeout_second: usize, update_time_second: usize, concurrency: usize) -> Self {
+    pub fn new(
+        timeout_second: usize,
+        update_time_second: usize,
+        concurrency: usize,
+        router: Arc<Router>,
+    ) -> Self {
         let mut interest_pool = Self {
-            //pool
             _connection_pool: Arc::new(RwLock::new(Slab::new())),
             _waiting_pool: WaitingPool::new(),
-            //time
             _timeout_second: timeout_second,
             _update_time_second: update_time_second,
         };
 
-        tracing::info!("clone connectoin pool");
+        tracing::info!("clone connection pool");
         let interest_pool_clone = Arc::clone(&interest_pool._connection_pool);
 
         tracing::info!("start workers: {}", concurrency);
 
         interest_pool
             ._waiting_pool
-            .run_loop(interest_pool_clone, concurrency);
+            .run_loop(interest_pool_clone, concurrency, router);
 
         interest_pool
     }
 
-    //server to clinet
     pub fn new_event(&self, task: enum_task::Task) {
-        //defrost
         self._waiting_pool.defrost();
 
         let tx = self._waiting_pool.task_router();
@@ -67,9 +55,7 @@ impl InterestPool {
         });
     }
 
-    pub fn run_waiting() {}
-
-    pub fn add_connection(&mut self, mut conn: connection::Connection) {
+    pub fn add_connection(&mut self, mut conn: connection::Connection) -> usize {
         let mut pool_guard = self._connection_pool.write();
 
         let entry = pool_guard.vacant_entry();
@@ -79,6 +65,8 @@ impl InterestPool {
 
         tracing::info!("New connection id: {}", conn_id);
         entry.insert(conn);
+
+        conn_id
     }
 
     pub fn remove_connection(&mut self, conn: connection::Connection) {
@@ -99,22 +87,37 @@ impl InterestPool {
         pool_guard.contains(conn_id)
     }
 
-    // ====================================
-    // end note
-    // ====================================
+    pub fn collector(&self) {
+        let has_dead_conn = {
+            let pool_read = &self._connection_pool.read();
+            pool_read
+                .iter()
+                .any(|(_, conn)| !conn.is_life(CONNECTION_LIFETIME_SECS))
+        };
+
+        if has_dead_conn {
+            let mut pool_write = self._connection_pool.write();
+            pool_write.retain(|_, conn| {
+                if !conn.is_life(CONNECTION_LIFETIME_SECS) {
+                    tracing::warn!("Closing connection due to AFK timeout");
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+    }
 }
 
 // ====================================
 // WAITING
 // ====================================
+
 const WAITING_SIZE_TASK_BUFFER: usize = 1024;
 
 struct WaitingPool {
-    //waiting
-    _rx: Option<mpsc::Receiver<enum_task::Task>>, // queue task
-    _tx: mpsc::Sender<enum_task::Task>,           // transmitter
-
-    //frozen
+    _rx: Option<mpsc::Receiver<enum_task::Task>>,
+    _tx: mpsc::Sender<enum_task::Task>,
     _is_frozen: Arc<AtomicBool>,
     _freeze_notify: Arc<Notify>,
 }
@@ -131,26 +134,11 @@ impl WaitingPool {
         }
     }
 
-    //
-    //
-    //
-
-    //loop freze
-    // fn freeze(&self) {
-    //     tracing::info!("freze waiting loop...");
-    //     self._is_frozen.store(true, Ordering::Relaxed);
-    // }
-
-    //loop defrost
     fn defrost(&self) {
         tracing::info!("defrost waiting loop...");
         self._is_frozen.store(false, Ordering::Relaxed);
-        self._freeze_notify.notify_one(); //to wake up async loop if on sleep
+        self._freeze_notify.notify_one();
     }
-
-    //
-    //
-    //
 
     fn task_router(&self) -> mpsc::Sender<enum_task::Task> {
         self._tx.clone()
@@ -158,72 +146,126 @@ impl WaitingPool {
 
     fn run_loop(
         &mut self,
-        interest_pool: std::sync::Arc<parking_lot::RwLock<slab::Slab<connection::Connection>>>,
+        interest_pool: Arc<RwLock<Slab<connection::Connection>>>,
         concurrency: usize,
+        router: Arc<Router>, // Router passed into each worker
     ) {
-        //clone point on other tread
         let is_frozen = Arc::clone(&self._is_frozen);
         let freeze_notify = Arc::clone(&self._freeze_notify);
 
-        //get rx to on Arc<Mutex> (reading all worker)
         let rx = match self._rx.take() {
             Some(r) => Arc::new(tokio::sync::Mutex::new(r)),
             None => {
-                tracing::warn!("waiting loop is running");
+                tracing::warn!("waiting loop is already running");
                 return;
             }
         };
 
-        //working task
-        tracing::info!("Running {} task worker", concurrency);
+        tracing::info!("Running {} task workers", concurrency);
 
         for worker_id in 0..concurrency {
-            let is_fronzen = Arc::clone(&is_frozen);
+            let is_frozen = Arc::clone(&is_frozen);
             let freeze_notify = Arc::clone(&freeze_notify);
             let interest_pool = Arc::clone(&interest_pool);
             let rx = Arc::clone(&rx);
+            let router = Arc::clone(&router); // each worker gets its own Arc pointer
 
             tokio::spawn(async move {
                 tracing::info!("Worker #{} started", worker_id);
 
                 loop {
-                    //check is freeze loop
-                    if is_fronzen.load(Ordering::Relaxed) {
+                    // Pause if the loop is frozen
+                    if is_frozen.load(Ordering::Relaxed) {
                         freeze_notify.notified().await;
                     }
 
-                    //take one task in pool
+                    // Pull one task from the shared channel
                     let task_option: Option<enum_task::Task> = {
                         let mut rx_guard = rx.lock().await;
                         rx_guard.recv().await
-                    }; //die rx guard
+                    };
 
-                    // if chanel is close -> die worker
+                    // Channel closed — shut down worker
                     let Some(task) = task_option else {
                         break;
                     };
 
                     match task {
                         enum_task::Task::ReadData { conn_id } => {
-                            let pool_guard = interest_pool.read();
-                            if let Some(conn) = pool_guard.get(conn_id) {
-                                // Read data
+                            let raw_bytes = {
+                                let pool_guard = interest_pool.read();
+                                if let Some(conn) = pool_guard.get(conn_id) {
+                                    match conn.read_to_buffer() {
+                                        Ok(0) => {
+                                            // Client closed connection gracefully
+                                            tracing::info!("Client {} disconnected", conn_id);
+                                            None
+                                        }
+                                        Ok(n) => {
+                                            tracing::info!(
+                                                "Read {} bytes from conn_id: {}",
+                                                n,
+                                                conn_id
+                                            );
+                                            let bytes = conn._socket.lock().read_buffer.to_vec();
+                                            conn._socket.lock().read_buffer.clear();
+                                            Some(bytes)
+                                        }
+                                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                            // No data ready yet — spurious wake, skip
+                                            None
+                                        }
+                                        Err(e) => {
+                                            tracing::error!(
+                                                "Read error on conn_id {}: {}",
+                                                conn_id,
+                                                e
+                                            );
+                                            None
+                                        }
+                                    }
+                                } else {
+                                    None
+                                }
+                            }; // pool read lock released here
+
+                            // Forward bytes to a backend via the router
+                            if let Some(bytes) = raw_bytes {
+                                if !bytes.is_empty() {
+                                    Arc::clone(&router).to_backend(conn_id, bytes);
+                                }
                             }
                         }
 
+                        // Triggered by the router when it has a response for the client
                         enum_task::Task::SendData { conn_id, payload } => {
                             let pool_guard = interest_pool.read();
                             if let Some(conn) = pool_guard.get(conn_id) {
-                                // send data
+                                match conn.write_to_buffer(&payload) {
+                                    Ok(n) => {
+                                        tracing::info!("Sent {} bytes to conn_id: {}", n, conn_id);
+                                    }
+                                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                                        tracing::warn!(
+                                            "Write would block for conn_id: {}",
+                                            conn_id
+                                        );
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(
+                                            "Write error for conn_id {}: {}",
+                                            conn_id,
+                                            e
+                                        );
+                                    }
+                                }
                             }
                         }
                     }
                 }
+
                 tracing::info!("Worker #{} stopped", worker_id);
             });
         }
     }
 }
-// ====================================
-//
-// ====================================

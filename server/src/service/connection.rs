@@ -1,6 +1,7 @@
 use bytes::BytesMut;
 use common::time;
-use std::net::SocketAddr;
+use parking_lot::Mutex;
+use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpStream;
 use tracing::debug;
 
@@ -13,51 +14,51 @@ const WRITE_BUFFER_SIZE: usize = 4096;
 
 const CHUNK_SIZE: usize = 1024;
 
+pub struct ConnectoinSocket {
+    pub _stream: Arc<TcpStream>,
+    pub read_buffer: BytesMut,
+    pub write_buffer: BytesMut,
+}
+
 pub struct Connection {
     _id: usize,
     _endpoint: SocketAddr,
 
-    pub stream: TcpStream,
-
-    pub read_buffer: BytesMut,
-    pub write_buffer: BytesMut,
-
     _time_stamp: u64,
     _status: u8,
+
+    pub _socket: Mutex<ConnectoinSocket>,
 }
 
 impl Connection {
-    pub fn new(client_endpoint: SocketAddr, stream: TcpStream) -> Self {
+    pub fn new(client_endpoint: SocketAddr, stream: Arc<TcpStream>) -> Self {
+        let socket: Mutex<ConnectoinSocket> = Mutex::new(ConnectoinSocket {
+            _stream: stream,
+            read_buffer: BytesMut::with_capacity(READ_BUFFER_SIZE),
+            write_buffer: BytesMut::with_capacity(WRITE_BUFFER_SIZE),
+        });
+
         Self {
             _id: 0,
             _endpoint: client_endpoint,
-            stream,
-
-            read_buffer: BytesMut::with_capacity(READ_BUFFER_SIZE),
-            write_buffer: BytesMut::with_capacity(WRITE_BUFFER_SIZE),
             _time_stamp: time::timestamp(),
             _status: STATUS_LIFE,
-        }
-    }
 
-    pub fn print(&self) {
-        println!(
-            "Connection -> _connection_id: {},  Endpoint: {}, Timestamp: {}, Status: {}",
-            self._id, self._endpoint, self._time_stamp, self._status
-        );
+            _socket: socket,
+        }
     }
 
     //==========================================================
     // NETWORK OPERATIONS
     //==========================================================
 
-    pub fn read_to_buffer(&mut self) -> std::io::Result<usize> {
-        let mut chunk = [0u8; CHUNK_SIZE];
+    pub fn read_to_buffer(&self) -> std::io::Result<usize> {
+        let mut net = self._socket.lock();
+        let mut chunk = vec![0u8; CHUNK_SIZE];
 
-        match self.stream.try_read(&mut chunk) {
+        match net._stream.try_read(&mut chunk) {
             Ok(n) if n > 0 => {
-                self.read_buffer.extend_from_slice(&chunk[..n]);
-                self.update_time_stamp();
+                net.read_buffer.extend_from_slice(&chunk[..n]);
                 Ok(n)
             }
             Ok(n) => Ok(n), // client close connection
@@ -65,15 +66,18 @@ impl Connection {
         }
     }
 
-    pub fn write_to_buffer(&mut self) -> std::io::Result<usize> {
-        if self.write_buffer.is_empty() {
+    pub fn write_to_buffer(&self, payload: &[u8]) -> std::io::Result<usize> {
+        let mut net = self._socket.lock();
+
+        net.write_buffer.extend_from_slice(payload);
+
+        if net.write_buffer.is_empty() {
             return Ok(0);
         }
 
-        match self.stream.try_write(&self.write_buffer) {
+        match net._stream.try_write(&net.write_buffer) {
             Ok(n) => {
-                let _ = self.write_buffer.split_to(n);
-                self.update_time_stamp();
+                let _ = net.write_buffer.split_to(n);
                 Ok(n)
             }
             Err(e) => Err(e),
@@ -97,6 +101,10 @@ impl Connection {
         self._time_stamp
     }
 
+    pub fn get_stream(&self) -> Arc<TcpStream> {
+        Arc::clone(&self._socket.lock()._stream)
+    }
+
     pub fn is_life(&self, lifetime: u16) -> bool {
         let is_life = (self.get_time_stamp() + lifetime as u64) > time::timestamp();
         debug!("{}", is_life);
@@ -118,7 +126,7 @@ impl Connection {
         self._id = id;
     }
 
-    pub fn downgrade_status(&mut self) -> bool {
+    pub fn update_life_status(&mut self) -> bool {
         match self._status {
             STATUS_DIE => false,
             _ => {

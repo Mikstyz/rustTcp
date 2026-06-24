@@ -1,58 +1,106 @@
-use crate::service::connection;
-use std::net::{TcpListener, TcpStream};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use crate::service::events::InterestPool;
+use crate::{entities::enum_task, service::connection};
+use std::sync::Arc;
+use tokio::net::TcpListener;
+use tokio::sync::RwLock;
 use tracing::{debug, info};
+
+const COLLECTOR_TIMEOUT_SECS: u64 = 1;
+const WRITER_TIMESTEP_CONN_MS: u64 = 10;
 
 pub struct TcpServer {
     _addr: String,
     _name: String,
     _password: String,
+
+    _pool: Arc<RwLock<InterestPool>>,
 }
 
 impl TcpServer {
-    pub fn new(addr: &str, name: &str, password: &str) -> Self {
-        debug!(
-            "ip: {} \nname: {} \npassword: {}\n",
-            addr,
-            name.to_string(),
-            password.to_string(), 
-        );
+    pub fn new(addr: &str, name: &str, password: &str, pool: InterestPool) -> Self {
+        debug!("ip: {} \nname: {} \npassword: {}\n", addr, name, password,);
 
         Self {
             _name: name.to_string(),
             _addr: addr.to_string(),
             _password: password.to_string(),
+            _pool: Arc::new(RwLock::new(pool)),
         }
     }
 
-    //liste client and send data
-    async fn handle_client(
-        mut _stream: TcpStream,
-        _addr: std::net::SocketAddr,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        Ok(())
-    }
-
     pub async fn initialization_async(&self) -> Result<(), Box<dyn std::error::Error>> {
-        debug!("arc clone connections");
+        debug!("start dead connection collector");
+        let collerctor_afk_connectoin = Arc::clone(&self._pool);
 
-        debug!("tokio spawn cleanup task");
         tokio::spawn(async move {
             loop {
-                debug!("Clear die conn");
+                tokio::time::sleep(tokio::time::Duration::from_secs(COLLECTOR_TIMEOUT_SECS)).await;
+                debug!("clean die connection");
+
+                let pool_write = collerctor_afk_connectoin.write().await;
+                pool_write.collector();
+                drop(pool_write); // явно освобождаем write lock
             }
         });
 
-        let listener = TcpListener::bind(&self._addr).unwrap();
-        info!("{} TCP server run - addr: {}", self._name, self._addr);
-
+        let listener = TcpListener::bind(&self._addr).await?;
+        info!("{} tcp server run - addr: {}", self._name, self._addr);
         debug!("writing tcp flow");
 
         loop {
-            match listener.accept() {
+            match listener.accept().await {
                 Ok((stream, socket_addr)) => {
                     debug!("new connection from: {}", socket_addr);
+
+                    if let Err(e) = stream.set_nodelay(true) {
+                        tracing::error!("Failed to set NO_DELAY: {}", e);
+                    }
+
+                    let stream = Arc::new(stream); // Arc<TcpStream>
+                    let spy_stream = Arc::clone(&stream); // task spawn
+
+                    let conn = connection::Connection::new(socket_addr, Arc::clone(&stream));
+                    let pool_clone = Arc::clone(&self._pool);
+
+                    let conn_id = {
+                        let mut pool_guard = pool_clone.write().await;
+                        pool_guard.add_connection(conn)
+                    };
+
+                    let w_pool_clone = Arc::clone(&self._pool);
+
+                    tokio::spawn(async move {
+                        loop {
+                            match spy_stream.readable().await {
+                                Ok(()) => {
+                                    let pool_guard = w_pool_clone.read().await;
+                                    let is_alive = pool_guard.contains_connection(conn_id);
+                                    drop(pool_guard);
+
+                                    if is_alive {
+                                        let pool_guard = w_pool_clone.read().await;
+                                        pool_guard.new_event(enum_task::Task::ReadData { conn_id });
+                                        drop(pool_guard);
+
+                                        tokio::time::sleep(tokio::time::Duration::from_millis(
+                                            WRITER_TIMESTEP_CONN_MS,
+                                        ))
+                                        .await;
+                                    } else {
+                                        debug!(
+                                            "Socket watcher for ID {} stopped (conn deleted)",
+                                            conn_id
+                                        );
+                                        break;
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!("error reading socket id {}: {}", conn_id, e);
+                                    break;
+                                }
+                            }
+                        }
+                    });
                 }
                 Err(e) => {
                     debug!("Error at accept client connection: {}", e);

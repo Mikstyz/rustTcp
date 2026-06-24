@@ -1,7 +1,9 @@
 {
-  "NAME": "Server",
-  "ADDR": "127.0.0.0:1234",
-  "PASSWORD": "Password",
+  "NAME": "MyServer",
+  "ADDR": "127.0.0.1:8080",
+  "PASSWORD": "secret",
   "TIMEOUT_SECOND": "30",
-  "UPDATE_TIME_SECOND": "0"
+  "UPDATE_TIME_SECOND": "5",
+  "WORKER_CONCURRENCY": "4",
+  "BACKENDS": ["127.0.0.1:9000", "127.0.0.1:9001"]
 }
