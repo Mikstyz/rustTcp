@@ -3,8 +3,9 @@ use tracing::debug; //error, info};
 
 pub mod service {
     pub mod connection;
-    pub mod pool;
-    pub mod tcp;
+    pub mod events;
+    pub mod router;
+    pub mod listener;
 }
 
 pub mod entities {
@@ -31,3 +32,17 @@ async fn main() {
     debug!("config: \n{:?}", config);
     //run server
 }
+
+// ==================================================================
+//                                NOTE
+// =================================================================
+//
+// 1. Прописать tcp server
+//  1. работа с events
+//
+// 2. Прописать router
+//  1.1 для выведения данных на другие сервисы
+//  1.2 добавление серверов обработчиков в пулл из конфига
+//  1.3
+//
+// =================================================================

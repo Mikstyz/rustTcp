@@ -16,7 +16,7 @@ impl TcpServer {
             "ip: {} \nname: {} \npassword: {}\n",
             addr,
             name.to_string(),
-            password.to_string(),
+            password.to_string(), 
         );
 
         Self {
