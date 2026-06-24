@@ -7,20 +7,20 @@ use std::io::BufReader;
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Config {
-    _name: String,
-    _addr: String,
-    _password: String,
+    name: String,
+    addr: String,
+    password: String,
 
     #[serde_as(as = "DisplayFromStr")]
-    _timeout_second: usize,
+    timeout_second: usize,
 
     #[serde_as(as = "DisplayFromStr")]
-    _update_time_second: usize,
+    update_time_second: usize,
 
     #[serde_as(as = "DisplayFromStr")]
-    _worker_concurrency: usize,
+    worker_concurrency: usize,
 
-    _backends: Vec<String>,
+    backends: Vec<String>,
 }
 
 impl Config {
@@ -34,30 +34,30 @@ impl Config {
     }
 
     pub fn addr(&self) -> &str {
-        &self._addr
+        &self.addr
     }
 
     pub fn name(&self) -> &str {
-        &self._name
+        &self.name
     }
 
     pub fn password(&self) -> &str {
-        &self._password
+        &self.password
     }
 
     pub fn timeout_second(&self) -> usize {
-        self._timeout_second
+        self.timeout_second
     }
 
     pub fn update_time_second(&self) -> usize {
-        self._update_time_second
+        self.update_time_second
     }
 
     pub fn worker_concurrency(&self) -> usize {
-        self._worker_concurrency
+        self.worker_concurrency
     }
 
     pub fn backends(&self) -> &Vec<String> {
-        &self._backends
+        &self.backends
     }
 }
