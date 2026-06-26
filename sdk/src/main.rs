@@ -1,5 +1,3 @@
-
-
 pub mod service {
     pub mod clinet;
     pub mod server;
