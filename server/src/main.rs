@@ -18,10 +18,6 @@ pub mod config {
     pub mod config;
 }
 
-pub mod test {
-    pub mod server_test;
-}
-
 const CONFIG_DIR: &str = "ServerConfig.json";
 
 #[tokio::main]
