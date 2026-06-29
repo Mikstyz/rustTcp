@@ -10,7 +10,6 @@ pub struct ProxyConfig {
     pub addr: String,
 }
 
-// 1. Обязательно добавляем этот макрос сверху структуры
 #[serde_as]
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]

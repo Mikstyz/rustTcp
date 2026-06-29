@@ -3,27 +3,24 @@ use serde_with::{DisplayFromStr, serde_as};
 use std::fs::File;
 use std::io::BufReader;
 
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub struct ProxyConfig {
+    pub name: String,
+    pub addr: String,
+}
+
 #[serde_as]
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Config {
-    name: String,
-    addr: String,
-    password: String,
-
+    proxies: Vec<ProxyConfig>,
     #[serde_as(as = "DisplayFromStr")]
-    timeout_second: usize,
-
+    timeout_ms: u64,
     #[serde_as(as = "DisplayFromStr")]
-    update_time_second: usize,
-
+    reconnect_attempts: u8,
     #[serde_as(as = "DisplayFromStr")]
-    worker_concurrency: usize,
-
-    #[serde_as(as = "DisplayFromStr")]
-    backend_is_life_second: usize,
-
-    backends: Vec<String>,
+    addr: u16,
 }
 
 impl Config {
@@ -36,35 +33,19 @@ impl Config {
         config
     }
 
-    pub fn addr(&self) -> &str {
-        &self.addr
+    pub fn proxies(&self) -> &[ProxyConfig] {
+        &self.proxies
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn timeout_ms(&self) -> u64 {
+        self.timeout_ms
     }
 
-    pub fn password(&self) -> &str {
-        &self.password
+    pub fn reconnect_attempts(&self) -> u8 {
+        self.reconnect_attempts
     }
 
-    pub fn timeout_second(&self) -> usize {
-        self.timeout_second
-    }
-
-    pub fn update_time_second(&self) -> usize {
-        self.update_time_second
-    }
-
-    pub fn worker_concurrency(&self) -> usize {
-        self.worker_concurrency
-    }
-
-    pub fn backend_is_life_second(&self) -> usize {
-        self.backend_is_life_second
-    }
-
-    pub fn backends(&self) -> &Vec<String> {
-        &self.backends
+    pub fn addr(&self) -> u16 {
+        self.addr
     }
 }

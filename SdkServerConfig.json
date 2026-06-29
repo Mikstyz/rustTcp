@@ -1,5 +1,9 @@
 {
-  "BUFFER_SIZE": "1024",
-  "Proxy": "127.0.0.1:8000",
-  "Addr": "127.0.0.1:9001"
+  "PROXIES": [
+    { "NAME": "EU", "ADDR": "127.0.0.1:8080" },
+    { "NAME": "US", "ADDR": "127.0.0.1:8081" }
+  ],
+  "ADDR": "127.0.0.1:9000",
+  "TIMEOUT_MS": "5000",
+  "RECONNECT_ATTEMPTS": "3"
 }
