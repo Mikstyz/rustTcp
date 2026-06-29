@@ -7,7 +7,7 @@ use std::io::BufReader;
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Config {
-    addr: String,
+    _addr: String,
 }
 
 impl Config {
@@ -21,6 +21,6 @@ impl Config {
     }
 
     pub fn addr(&self) -> &str {
-        &self.addr
+        &self._addr
     }
 }

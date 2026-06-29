@@ -6,19 +6,19 @@ use std::io::BufReader;
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct ProxyConfig {
-    pub name: String,
-    pub addr: String,
+    pub _name: String,
+    pub _addr: String,
 }
 
 #[serde_as]
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct Config {
-    proxies: Vec<ProxyConfig>,
+    _proxies: Vec<ProxyConfig>,
     #[serde_as(as = "DisplayFromStr")]
-    timeout_ms: u64,
+    _timeout_ms: u64,
     #[serde_as(as = "DisplayFromStr")]
-    reconnect_attempts: u8,
+    _reconnect_attempts: u8,
 }
 
 impl Config {
@@ -32,14 +32,14 @@ impl Config {
     }
 
     pub fn proxies(&self) -> &[ProxyConfig] {
-        &self.proxies
+        &self._proxies
     }
 
     pub fn timeout_ms(&self) -> u64 {
-        self.timeout_ms
+        self._timeout_ms
     }
 
     pub fn reconnect_attempts(&self) -> u8 {
-        self.reconnect_attempts
+        self._reconnect_attempts
     }
 }
