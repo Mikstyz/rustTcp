@@ -1,5 +1,5 @@
-use crate::config::config::Config;
-use crate::service::proxy_enty;
+use super::proxy_enty;
+//use crate::config::config::Config;
 use std::time::Duration;
 use tokio::net::TcpStream;
 
@@ -9,16 +9,10 @@ pub struct ProxyPool {
 }
 
 impl ProxyPool {
-    pub fn from_config(config: &Config) -> Self {
-        let proxies = config
-            .proxies()
-            .iter()
-            .map(|p| proxy_enty::ProxyEntry::new(p.name.clone(), p.addr.clone()))
-            .collect();
-
+    pub fn from_config(proxies: Vec<proxy_enty::ProxyEntry>, timeout_ms: u64) -> Self {
         Self {
             _proxies: proxies,
-            _timeout_ms: config.timeout_ms(),
+            _timeout_ms: timeout_ms,
         }
     }
 

@@ -102,6 +102,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "crossterm",
+ "futures",
  "serde",
  "serde_json",
  "serde_with",
