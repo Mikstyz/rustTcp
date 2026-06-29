@@ -1,0 +1,8 @@
+{
+  "PROXIES": [
+    { "NAME": "EU", "ADDR": "127.0.0.1:8080" },
+    { "NAME": "US", "ADDR": "127.0.0.1:8081" }
+  ],
+  "TIMEOUT_MS": "5000",
+  "RECONNECT_ATTEMPTS": "3"
+}

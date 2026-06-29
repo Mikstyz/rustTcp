@@ -18,7 +18,7 @@ pub mod config {
     pub mod config;
 }
 
-const CONFIG_DIR: &str = "ServerConfig.json";
+const CONFIG_DIR: &str = "TcpProxyConfig.json";
 
 #[tokio::main]
 async fn main() {
