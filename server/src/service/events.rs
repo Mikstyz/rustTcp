@@ -160,7 +160,7 @@ impl WaitingPool {
         interest_pool: Arc<RwLock<Slab<connection::Connection>>>,
         concurrency: usize,
         router: Arc<Router>,
-        tx: mpsc::Sender<enum_task::Task>, // used by router.to_backend() to send responses back
+        tx: mpsc::Sender<enum_task::Task>,
     ) {
         let is_frozen = Arc::clone(&self._is_frozen);
         let freeze_notify = Arc::clone(&self._freeze_notify);
@@ -221,6 +221,15 @@ impl WaitingPool {
                                             );
                                             let bytes = conn._socket.lock().read_buffer.to_vec();
                                             conn._socket.lock().read_buffer.clear();
+
+                                            // Update timestamp so collector doesn't kill active connection
+                                            drop(pool_guard);
+                                            let mut pool_write = interest_pool.write();
+                                            if let Some(conn) = pool_write.get_mut(conn_id) {
+                                                conn.update_time_stamp();
+                                            }
+                                            drop(pool_write);
+
                                             Some(bytes)
                                         }
                                         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
