@@ -5,8 +5,6 @@ mod config {
 }
 mod service {
     pub mod connectoin;
-    pub mod proxy_enty;
-    pub mod proxy_pool;
 }
 
 const CONFIG_DIR: &str = "SdkClientConfig.json";
