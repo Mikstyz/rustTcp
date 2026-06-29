@@ -1,17 +1,17 @@
 pub struct ProxyEntry {
-    pub name: String,
-    pub addr: String,
-    pub status: bool,
-    pub latency_ms: Option<u64>,
+    pub _name: String,
+    pub _addr: String,
+    pub _status: bool,
+    pub _latency_ms: Option<u64>,
 }
 
 impl ProxyEntry {
-    pub fn new(name: String, addr: String) -> Self {
+    pub fn new(_name: String, _addr: String) -> Self {
         Self {
-            name,
-            addr,
-            status: false,
-            latency_ms: None,
+            _name,
+            _addr,
+            _status: false,
+            _latency_ms: None,
         }
     }
 }

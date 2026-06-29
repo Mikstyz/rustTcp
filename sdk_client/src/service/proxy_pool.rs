@@ -24,27 +24,27 @@ impl ProxyPool {
 
     // Ping a single proxy by name — updates its status and latency
     pub async fn ping_one(&mut self, name: &str) -> Option<u64> {
-        let proxy = self._proxies.iter_mut().find(|p| p.name == name)?;
+        let proxy = self._proxies.iter_mut().find(|p| p._name == name)?;
 
         let start = std::time::Instant::now();
         let result = tokio::time::timeout(
             Duration::from_millis(self._timeout_ms),
-            TcpStream::connect(&proxy.addr),
+            TcpStream::connect(&proxy._addr),
         )
         .await;
 
         match result {
             Ok(Ok(_)) => {
                 let latency = start.elapsed().as_millis() as u64;
-                proxy.status = true;
-                proxy.latency_ms = Some(latency);
-                tracing::info!("Proxy {} [{}] — {}ms", proxy.name, proxy.addr, latency);
+                proxy._status = true;
+                proxy._latency_ms = Some(latency);
+                tracing::info!("Proxy {} [{}] — {}ms", proxy._name, proxy._addr, latency);
                 Some(latency)
             }
             _ => {
-                proxy.status = false;
-                proxy.latency_ms = None;
-                tracing::warn!("Proxy {} [{}] — OFFLINE", proxy.name, proxy.addr);
+                proxy._status = false;
+                proxy._latency_ms = None;
+                tracing::warn!("Proxy {} [{}] — OFFLINE", proxy._name, proxy._addr);
                 None
             }
         }
@@ -58,7 +58,7 @@ impl ProxyPool {
         let targets: Vec<(String, String, u64)> = self
             ._proxies
             .iter()
-            .map(|p| (p.name.clone(), p.addr.clone(), self._timeout_ms))
+            .map(|p| (p._name.clone(), p._addr.clone(), self._timeout_ms))
             .collect();
 
         // Ping all simultaneously
@@ -86,9 +86,9 @@ impl ProxyPool {
 
         // Update statuses
         for (name, status, latency) in results {
-            if let Some(proxy) = self._proxies.iter_mut().find(|p| p.name == name) {
-                proxy.status = status;
-                proxy.latency_ms = latency;
+            if let Some(proxy) = self._proxies.iter_mut().find(|p| p._name == name) {
+                proxy._status = status;
+                proxy._latency_ms = latency;
 
                 match latency {
                     Some(ms) => tracing::info!("Proxy {} — {}ms", name, ms),
@@ -102,24 +102,24 @@ impl ProxyPool {
     pub fn fastest(&self) -> Option<&str> {
         self._proxies
             .iter()
-            .filter(|p| p.status)
-            .min_by_key(|p| p.latency_ms.unwrap_or(u64::MAX))
-            .map(|p| p.name.as_str())
+            .filter(|p| p._status)
+            .min_by_key(|p| p._latency_ms.unwrap_or(u64::MAX))
+            .map(|p| p._name.as_str())
     }
 
     // Return addr of proxy by name
     pub fn addr_of(&self, name: &str) -> Option<&str> {
         self._proxies
             .iter()
-            .find(|p| p.name == name)
-            .map(|p| p.addr.as_str())
+            .find(|p| p._name == name)
+            .map(|p| p._addr.as_str())
     }
 
     // Connect to a specific proxy by name — returns its addr for Connection::connect()
     pub fn connect_to(&self, name: &str) -> Result<&str, String> {
-        match self._proxies.iter().find(|p| p.name == name) {
-            Some(proxy) if proxy.status => Ok(&proxy.addr),
-            Some(proxy) => Err(format!("Proxy {} is OFFLINE", proxy.name)),
+        match self._proxies.iter().find(|p| p._name == name) {
+            Some(proxy) if proxy._status => Ok(&proxy._addr),
+            Some(proxy) => Err(format!("Proxy {} is OFFLINE", proxy._name)),
             None => Err(format!("Proxy {} not found", name)),
         }
     }
@@ -133,8 +133,8 @@ impl ProxyPool {
                 let addr = self
                     ._proxies
                     .iter()
-                    .find(|p| p.name == name)
-                    .map(|p| p.addr.as_str())
+                    .find(|p| p._name == name)
+                    .map(|p| p._addr.as_str())
                     .unwrap();
                 tracing::info!("Fastest proxy: {} [{}]", name, addr);
                 Ok(addr)
@@ -151,9 +151,9 @@ impl ProxyPool {
         let result = self
             ._proxies
             .iter()
-            .filter(|p| p.status && p.name != failed_name)
-            .min_by_key(|p| p.latency_ms.unwrap_or(u64::MAX))
-            .map(|p| p.addr.as_str());
+            .filter(|p| p._status && p._name != failed_name)
+            .min_by_key(|p| p._latency_ms.unwrap_or(u64::MAX))
+            .map(|p| p._addr.as_str());
 
         match result {
             Some(addr) => Ok(addr),
@@ -165,9 +165,9 @@ impl ProxyPool {
     pub fn status(&self) {
         tracing::info!("=== Proxy Pool Status ===");
         for p in &self._proxies {
-            match p.latency_ms {
-                Some(ms) => tracing::info!("[Online]  {} [{}] — {}ms", p.name, p.addr, ms),
-                None => tracing::info!("[Offline] {} [{}]", p.name, p.addr),
+            match p._latency_ms {
+                Some(ms) => tracing::info!("[Online]  {} [{}] — {}ms", p._name, p._addr, ms),
+                None => tracing::info!("[Offline] {} [{}]", p._name, p._addr),
             }
         }
     }
