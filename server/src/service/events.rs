@@ -15,6 +15,7 @@ pub struct InterestPool {
     _waiting_pool: WaitingPool,
     _timeout_second: usize,
     _update_time_second: usize,
+    _backend_is_life_second: usize,
 }
 
 impl InterestPool {
@@ -22,6 +23,8 @@ impl InterestPool {
         timeout_second: usize,
         update_time_second: usize,
         concurrency: usize,
+        backend_is_life_second: usize,
+        //
         router: Arc<Router>,
     ) -> Self {
         let mut interest_pool = Self {
@@ -29,6 +32,7 @@ impl InterestPool {
             _waiting_pool: WaitingPool::new(),
             _timeout_second: timeout_second,
             _update_time_second: update_time_second,
+            _backend_is_life_second: backend_is_life_second,
         };
 
         tracing::info!("clone connection pool");

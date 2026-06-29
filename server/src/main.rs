@@ -40,11 +40,14 @@ async fn main() {
         config.timeout_second(),
         config.update_time_second(),
         config.worker_concurrency(),
+        config.backend_is_life_second(),
         Arc::clone(&router),
     );
 
     let server =
         service::listener::TcpServer::new(config.addr(), config.name(), config.password(), pool);
+
+    Arc::clone(&router).healthcheck();
 
     if let Err(e) = server.initialization_async().await {
         tracing::error!("Server error: {}", e);

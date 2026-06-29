@@ -20,6 +20,9 @@ pub struct Config {
     #[serde_as(as = "DisplayFromStr")]
     worker_concurrency: usize,
 
+    #[serde_as(as = "DisplayFromStr")]
+    backend_is_life_second: usize,
+
     backends: Vec<String>,
 }
 
@@ -55,6 +58,10 @@ impl Config {
 
     pub fn worker_concurrency(&self) -> usize {
         self.worker_concurrency
+    }
+
+    pub fn backend_is_life_second(&self) -> usize {
+        self.backend_is_life_second
     }
 
     pub fn backends(&self) -> &Vec<String> {

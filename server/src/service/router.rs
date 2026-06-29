@@ -14,6 +14,7 @@ use tracing::info;
 const TIMEOUT_SERVER_MS: u64 = 200;
 const MAX_POOL_CONNECTIONS: usize = 10;
 const POOL_WARMUP_COUNT: usize = 2;
+const HEALTHCHECK_INTERVAL_SECS: u64 = 30;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum BackendStatus {
@@ -134,7 +135,7 @@ impl Router {
     }
 
     // TCP ping to check if a backend is reachable and measure latency
-    pub async fn ping(&self, addr: &str) -> (BackendStatus, u32) {
+    async fn ping(&self, addr: &str) -> (BackendStatus, u32) {
         let start = std::time::Instant::now();
         let result = tokio::time::timeout(
             Duration::from_millis(TIMEOUT_SERVER_MS),
@@ -148,6 +149,104 @@ impl Router {
                 (BackendStatus::Online, latency)
             }
             _ => (BackendStatus::Offline, 0),
+        }
+    }
+
+    // Periodically ping all backends and update their status and latency
+    pub fn healthcheck(self: Arc<Self>) {
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(HEALTHCHECK_INTERVAL_SECS)).await;
+
+                tracing::info!("Running healthcheck for all backends");
+
+                // Collect all current backends to avoid holding lock during async ping
+                let backends: Vec<Arc<BackendPool>> = {
+                    let pool = self._upstreams.read();
+                    pool.iter().map(|(_, b)| Arc::clone(b)).collect()
+                };
+
+                for backend in backends {
+                    let (status, latency) = self.ping(&backend._addr).await;
+
+                    let mut pool = self._upstreams.write();
+                    if let Some((id, entry)) =
+                        pool.iter_mut().find(|(_, b)| b._addr == backend._addr)
+                    {
+                        let old_status = entry._status;
+
+                        // Rebuild BackendPool with updated status and latency
+                        let updated =
+                            Arc::new(BackendPool::new(entry._addr.clone(), id, status, latency));
+                        *entry = updated;
+
+                        // Log status transitions
+                        match (old_status, status) {
+                            (BackendStatus::Offline, BackendStatus::Online) => {
+                                tracing::info!(
+                                    "Backend {} recovered — back Online (latency: {}ms)",
+                                    backend._addr,
+                                    latency
+                                );
+                            }
+                            (BackendStatus::Online, BackendStatus::Offline) => {
+                                tracing::error!(
+                                    "Backend {} went Offline during healthcheck",
+                                    backend._addr
+                                );
+                            }
+                            (BackendStatus::Online, BackendStatus::Online) => {
+                                tracing::debug!(
+                                    "Backend {} OK — latency: {}ms",
+                                    backend._addr,
+                                    latency
+                                );
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Ping the address, then add it to the upstream pool if online
+    pub async fn add_rout_server(&self, addr: &str) -> bool {
+        let (status, latency_ms) = self.ping(addr).await;
+
+        if status == BackendStatus::Offline {
+            tracing::error!("Failed to add server {}: backend is OFFLINE", addr);
+            return false;
+        }
+
+        let mut pool = self._upstreams.write();
+        let entry = pool.vacant_entry();
+        let id = entry.key();
+
+        let backend = Arc::new(BackendPool::new(addr.to_string(), id, status, latency_ms));
+
+        let backend_clone = Arc::clone(&backend);
+        tokio::spawn(async move {
+            backend_clone.warmup(POOL_WARMUP_COUNT).await;
+        });
+
+        entry.insert(backend);
+        info!("New backend added to pool - id: {}, addr: {}", id, addr);
+
+        true
+    }
+
+    // Remove a backend server from the pool by ID
+    pub fn delete_rout_server(&self, id: usize) -> bool {
+        let mut pool = self._upstreams.write();
+
+        if pool.contains(id) {
+            pool.remove(id);
+            info!("Backend server with id: {} successfully removed", id);
+            true
+        } else {
+            tracing::warn!("Failed to delete server: id {} not found", id);
+            false
         }
     }
 
@@ -323,45 +422,5 @@ impl Router {
             // Return connection to pool after listener exits
             backend.release(conn).await;
         });
-    }
-
-    // Ping the address, then add it to the upstream pool if online
-    pub async fn add_rout_server(&self, addr: &str) -> bool {
-        let (status, latency_ms) = self.ping(addr).await;
-
-        if status == BackendStatus::Offline {
-            tracing::error!("Failed to add server {}: backend is OFFLINE", addr);
-            return false;
-        }
-
-        let mut pool = self._upstreams.write();
-        let entry = pool.vacant_entry();
-        let id = entry.key();
-
-        let backend = Arc::new(BackendPool::new(addr.to_string(), id, status, latency_ms));
-
-        let backend_clone = Arc::clone(&backend);
-        tokio::spawn(async move {
-            backend_clone.warmup(POOL_WARMUP_COUNT).await;
-        });
-
-        entry.insert(backend);
-        info!("New backend added to pool - id: {}, addr: {}", id, addr);
-
-        true
-    }
-
-    // Remove a backend server from the pool by ID
-    pub fn delete_rout_server(&self, id: usize) -> bool {
-        let mut pool = self._upstreams.write();
-
-        if pool.contains(id) {
-            pool.remove(id);
-            info!("Backend server with id: {} successfully removed", id);
-            true
-        } else {
-            tracing::warn!("Failed to delete server: id {} not found", id);
-            false
-        }
     }
 }
